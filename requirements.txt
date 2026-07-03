@@ -1,4 +1,4 @@
 streamlit
 feedparser
 pandas
-requests
+curl_cffi
