@@ -11,58 +11,80 @@ st.markdown("""
     .stApp { background-color: #000000; color: #39FF14; }
     h1, h2, h3, p, div, span { color: #39FF14 !important; font-family: 'Courier New', Courier, monospace; }
     .stDataFrame { background-color: #111111; }
+    .stButton>button { background-color: #39FF14; color: #000000; font-weight: bold; border-radius: 5px; border: 1px solid #39FF14; }
+    .stButton>button:hover { background-color: #000000; color: #39FF14; border: 1px solid #39FF14; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📈 MEDIA INTELLIGENCE: ECONOMIC & BUSINESS TRENDS")
+# --- HEADER & KENDALI MANUAL ---
+col_head1, col_head2 = st.columns([4, 1])
+with col_head1:
+    st.title("📈 MEDIA INTELLIGENCE TERMINAL")
+with col_head2:
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("🔄 FORCE REFRESH DATA"):
+        st.cache_data.clear() # Menghapus paksa memori cache yang macet
+
 st.markdown("---")
 
-# "Topeng" agar mesin dikenali sebagai peramban Chrome
+# "Topeng" Identitas
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 }
 
 # --- FUNGSI MENARIK BERITA ---
 @st.cache_data(ttl=900) 
 def get_news(url):
     try:
-        response = requests.get(url, headers=HEADERS, timeout=15)
+        response = requests.get(url, headers=HEADERS, timeout=10)
         feed = feedparser.parse(response.content)
         data = [{"Judul Berita Terhangat": entry.title, "Tautan": entry.link} for entry in feed.entries[:15]]
-        
-        if not data:
-            return pd.DataFrame([{"Judul Berita Terhangat": "Tidak ada data saat ini", "Tautan": ""}])
+        if not data: return pd.DataFrame([{"Judul Berita Terhangat": "Tidak ada data", "Tautan": ""}])
         return pd.DataFrame(data)
     except:
-        return pd.DataFrame([{"Judul Berita Terhangat": "Gagal memuat berita", "Tautan": ""}])
+        return pd.DataFrame([{"Judul Berita Terhangat": "Koneksi Berita Gagal", "Tautan": ""}])
 
-# --- FUNGSI MENARIK GOOGLE TRENDS VIA API PIHAK KETIGA (ANTI-BLOKIR) ---
+# --- FUNGSI HYDRA: PENARIK GOOGLE TRENDS BERLAPIS ---
 @st.cache_data(ttl=3600)
-def get_google_trends():
+def get_trends_hydra(geo_code):
+    url = f"https://trends.google.com/trends/trendingsearches/daily/rss?geo={geo_code}"
+    
+    # Strategi 1: Serangan Langsung
     try:
-        url_id = "https://api.rss2json.com/v1/api.json?rss_url=https://trends.google.com/trends/trendingsearches/daily/rss?geo=ID"
-        url_us = "https://api.rss2json.com/v1/api.json?rss_url=https://trends.google.com/trends/trendingsearches/daily/rss?geo=US"
-        
-        # Tarik data ID
-        res_id = requests.get(url_id, timeout=15).json()
-        data_id = [item['title'] for item in res_id.get('items', [])[:10]]
-        df_id = pd.DataFrame(data_id, columns=['Top Keywords (ID)'])
-        
-        # Tarik data US
-        res_us = requests.get(url_us, timeout=15).json()
-        data_us = [item['title'] for item in res_us.get('items', [])[:10]]
-        df_us = pd.DataFrame(data_us, columns=['Top Keywords (Global)'])
-        
-        # Jika data masih kosong
-        if df_id.empty: df_id = pd.DataFrame(["Data gagal ditarik"], columns=['Top Keywords (ID)'])
-        if df_us.empty: df_us = pd.DataFrame(["Data gagal ditarik"], columns=['Top Keywords (Global)'])
-        
-        return df_id, df_us
-    except Exception as e:
-        kosong = pd.DataFrame(["Sistem Error"], columns=["Status"])
-        return kosong, kosong
+        r = requests.get(url, headers=HEADERS, timeout=5)
+        feed = feedparser.parse(r.content)
+        if feed.entries: return [entry.title for entry in feed.entries[:10]]
+    except: pass
 
-# --- LAYOUT 3 KOLOM ---
+    # Strategi 2: Jalur Tikus (AllOrigins Proxy)
+    try:
+        r = requests.get(f"https://api.allorigins.win/get?url={url}", timeout=8).json()
+        feed = feedparser.parse(r['contents'])
+        if feed.entries: return [entry.title for entry in feed.entries[:10]]
+    except: pass
+
+    # Strategi 3: Jalur Tikus (CorsProxy)
+    try:
+        r = requests.get(f"https://corsproxy.io/?{url}", timeout=8)
+        feed = feedparser.parse(r.content)
+        if feed.entries: return [entry.title for entry in feed.entries[:10]]
+    except: pass
+    
+    # Strategi 4: API Format JSON (RSS2JSON)
+    try:
+        r = requests.get(f"https://api.rss2json.com/v1/api.json?rss_url={url}", timeout=8).json()
+        if 'items' in r and r['items']: return [item['title'] for item in r['items'][:10]]
+    except: pass
+
+    # Jika Google memblokir ke-4 lapis pertahanan (Sangat jarang terjadi)
+    return ["⚠️ Diblokir Google", "🔄 Klik Force Refresh"]
+
+def fetch_all_trends():
+    data_id = get_trends_hydra('ID')
+    data_us = get_trends_hydra('US')
+    return pd.DataFrame(data_id, columns=['Top Keywords (ID)']), pd.DataFrame(data_us, columns=['Top Keywords (Global)'])
+
+# --- LAYOUT 3 KOLOM UTAMA ---
 col1, col2, col3 = st.columns(3)
 
 with col1:
@@ -79,7 +101,7 @@ with col2:
 
 with col3:
     st.subheader("🔥 BREAKOUT KEYWORDS")
-    df_trend_id, df_trend_us = get_google_trends()
+    df_trend_id, df_trend_us = fetch_all_trends()
     
     st.markdown("**Pencarian Terpanas - Indonesia**")
     st.dataframe(df_trend_id, hide_index=True, use_container_width=True)
@@ -88,4 +110,4 @@ with col3:
     st.dataframe(df_trend_us, hide_index=True, use_container_width=True)
 
 st.markdown("---")
-st.markdown("*Data diperbarui secara real-time dari agregasi RSS Google News dan Google Trends via pihak ketiga.*")
+st.markdown("*Mesin ditenagai oleh Sistem Hydra Multi-Proxy. Jika data stagnan, gunakan tombol Force Refresh.*")
